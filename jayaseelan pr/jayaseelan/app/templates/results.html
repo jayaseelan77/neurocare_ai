@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analysis Intelligence - GaitAnalysis Pro</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="{{ url_for('static', filename='theme.js') }}"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        .metric-bar { height: 10px; border-radius: 8px; }
+        .walking-score-ring {
+            width: 140px; height: 140px;
+            border-radius: 50%;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            font-size: 2rem; font-weight: 700;
+            margin: 0 auto 1rem;
+        }
+        .score-good   { background: rgba(25,135,84,.15); color: #198754; border: 4px solid #198754; }
+        .score-medium { background: rgba(255,193,7,.15);  color: #b38600; border: 4px solid #ffc107; }
+        .score-bad    { background: rgba(220,53,69,.15);  color: #dc3545; border: 4px solid #dc3545; }
+    </style>
+</head>
+
+<body class="bg-light">
+    <nav class="navbar navbar-dark navbar-premium px-4">
+        <div class="container">
+            <span class="navbar-brand fw-bold mb-0 h1"><i class="fas fa-chart-line me-2"></i> Result Intelligence</span>
+            <div class="d-flex align-items-center">
+                <button class="btn btn-outline-light btn-sm rounded-circle me-3 px-2" onclick="toggleTheme()" title="Toggle Dark/Light Mode">
+                    <i id="themeIcon" class="fas fa-moon"></i>
+                </button>
+                <button onclick="downloadPDF()" class="btn btn-light btn-sm rounded-pill px-4 me-2 fw-bold shadow-sm text-premium" style="color: #764ba2;"><i class="fas fa-download me-1"></i> Save Report</button>
+                <a href="{{ url_for('dashboard') }}" class="btn btn-outline-light btn-sm rounded-pill px-4">Back to Dashboard</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid px-5 mt-4 mb-5">
+        <div class="row g-4">
+            
+            <!-- ── Left Column: Patient Overview & Core Risk ──────────────────── -->
+            <div class="col-lg-4">
+                <div class="glass-card p-5 animate-slide h-100" id="reportContentHeader">
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <span class="badge bg-primary-subtle text-primary rounded-pill px-3 py-2 fw-bold">
+                            <i class="fas fa-file-medical-alt me-2"></i>{{ task_type | capitalize }} Task Analysis
+                        </span>
+                        <small class="text-muted fw-bold">ID: PT-{{ range(1000, 9999) | random }}</small>
+                    </div>
+                    
+                    <h2 class="fw-bold mb-1">Clinical Evaluation</h2>
+                    <p class="text-muted small mb-4">Detection Engine: MediaPipe v0.5.1 + Deep CNN</p>
+                    <hr class="opacity-10 mb-4">
+
+                    <!-- Cognitive risk -->
+                    <div class="d-flex align-items-center mb-4 bg-light p-4 rounded-4 shadow-sm border">
+                        <div class="flex-shrink-0 animate-pulse">
+                            <div class="p-3 rounded-circle bg-{{ prediction.color }}-subtle">
+                                <i class="fas fa-brain fa-2x text-{{ prediction.color }}"></i>
+                            </div>
+                        </div>
+                        <div class="ms-3">
+                            <p class="mb-0 text-muted small text-uppercase fw-bold">Neurological Index</p>
+                            <h3 class="fw-bold text-{{ prediction.color }} mb-0">{{ prediction.level }}</h3>
+                        </div>
+                        <div class="ms-auto text-end">
+                            <p class="mb-0 text-muted small fw-bold">Risk Probability</p>
+                            <h3 class="fw-bold text-dark">{{ prediction.score }}%</h3>
+                        </div>
+                    </div>
+
+                    <div class="progress rounded-pill mb-5" style="height: 10px;">
+                        <div class="progress-bar bg-{{ prediction.color }} progress-bar-striped progress-bar-animated"
+                             role="progressbar" style="width: {{ prediction.score }}%"></div>
+                    </div>
+
+                    <!-- Walking quality ring -->
+                    <div class="text-center mb-4">
+                        <p class="fw-bold text-uppercase small text-muted mb-3">Overall Biomechanical Score</p>
+                        <div class="walking-score-ring shadow-sm
+                            {% if prediction.walking_score >= 65 %}score-good
+                            {% elif prediction.walking_score >= 40 %}score-medium
+                            {% else %}score-bad{% endif %}">
+                            {{ prediction.walking_score }}
+                            <small class="text-muted" style="font-size:.7rem; font-weight:700;">/100</small>
+                        </div>
+                        <span class="badge rounded-pill px-4 py-2 mt-3 fs-6
+                            {% if prediction.walking_score >= 65 %}bg-success
+                            {% elif prediction.walking_score >= 40 %}bg-warning text-dark
+                            {% else %}bg-danger{% endif %} shadow-sm">
+                            <i class="fas
+                                {% if prediction.walking_score >= 65 %}fa-walking
+                                {% elif prediction.walking_score >= 40 %}fa-exclamation-triangle
+                                {% else %}fa-times-circle{% endif %} me-2"></i>
+                            {{ prediction.walking_label }}
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Right Column: Biomechanical Data & AI Interpretation ──────────────────── -->
+            <div class="col-lg-8" id="reportContentBody">
+                <div class="glass-card p-5 animate-fade mb-4">
+                    <h4 class="fw-bold mb-4"><i class="fas fa-microscope text-primary me-2"></i>Biomechanical Vectors</h4>
+                    <div class="row g-4 mb-4">
+                        <div class="col-md-7">
+                            {% set metrics = [
+                                ('Spine Alignment',   prediction.metrics.spine,          'fa-male'),
+                                ('Arm Swing Asymmetry', prediction.metrics.arm_swing|default(85.0), 'fa-running'),
+                                ('Step Symmetry',     prediction.metrics.step_symmetry,   'fa-shoe-prints'),
+                                ('Walking Velocity',  prediction.metrics.velocity,        'fa-tachometer-alt'),
+                                ('Shoulder Level',    prediction.metrics.shoulder,        'fa-balance-scale'),
+                                ('Stride Distance',   prediction.metrics.stride_length,   'fa-ruler-horizontal'),
+                            ] %}
+                            {% for label, val, icon in metrics %}
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between mb-2">
+                                    <small class="fw-bold text-dark"><i class="fas {{ icon }} me-2 text-primary"></i>{{ label }}</small>
+                                    <small class="text-muted fw-bold">{{ val }}%</small>
+                                </div>
+                                <div class="progress metric-bar bg-light border">
+                                    <div class="progress-bar
+                                        {% if val >= 65 %}bg-success
+                                        {% elif val >= 40 %}bg-warning
+                                        {% else %}bg-danger{% endif %}"
+                                        style="width: {{ val }}%"></div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        
+                        <div class="col-md-5">
+                            <div class="bg-light p-4 rounded-4 border h-100">
+                                <h6 class="fw-bold mb-3 border-bottom pb-2">Normative Reference Range</h6>
+                                <ul class="list-unstyled small text-muted mb-0">
+                                    <li class="mb-3"><i class="fas fa-circle text-success me-2" style="font-size: 8px;"></i><strong>> 65%:</strong> Healthy clinical baseline. No immediate intervention required.</li>
+                                    <li class="mb-3"><i class="fas fa-circle text-warning me-2" style="font-size: 8px;"></i><strong>40% - 65%:</strong> Sub-clinical deterioration. Monitor functional mobility patterns over next 6 months.</li>
+                                    <li><i class="fas fa-circle text-danger me-2" style="font-size: 8px;"></i><strong>< 40%:</strong> Severe asymmetrical or kinematic degradation strongly correlated with neurological decline.</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row g-4">
+                    <div class="col-md-6">
+                        <!-- Clinical note -->
+                        <div class="p-4 rounded-4 bg-white border-start border-4 border-{{ prediction.color }} shadow-sm h-100">
+                            <h6 class="fw-bold text-dark"><i class="fas fa-laptop-medical me-2 text-{{ prediction.color }}"></i>AI Diagnostic Notes:</h6>
+                            <p class="mb-0 text-muted small lh-lg mt-3">
+                                {{ evaluation_summary }}
+                            </p>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <!-- Health Recommendations -->
+                        <div class="p-4 rounded-4 bg-white border shadow-sm h-100">
+                            <h6 class="fw-bold text-dark"><i class="fas fa-prescription me-2 text-{{ prediction.color }}"></i>Medical Recommendations:</h6>
+                            <ul class="mb-0 text-muted small mt-3 lh-lg ps-4">
+                                {% if prediction.level == 'Low Risk' %}
+                                <li class="mb-2">Maintain current cardiovascular regimens.</li>
+                                <li>Schedule standardized annual checkup.</li>
+                                {% elif prediction.level == 'Medium Risk' %}
+                                <li class="mb-2">Engage physical therapy for postural adjustments.</li>
+                                <li>Cognitive-motor functional assessment in 6 mos.</li>
+                                {% else %}
+                                <li class="mb-2 text-danger fw-bold">Immediate neurological consultation required.</li>
+                                <li class="mb-2">Initiate aggressive fall-prevention protocol.</li>
+                                <li>Brain MRI / specialized cognitive screening.</li>
+                                {% endif %}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        function downloadPDF() {
+            // Wait, we need to wrap both columns for the PDF export to look right.
+            const header = document.getElementById('reportContentHeader');
+            const body = document.getElementById('reportContentBody');
+            
+            // For a real-world app, we would clone and stitch them into a structured report, but here we can just target the parent row
+            const element = document.querySelector('.row.g-4');
+            const opt = {
+                margin:       0.5,
+                filename:     'GaitAnalysis_Clinical_Report.pdf',
+                image:        { type: 'jpeg', quality: 0.98 },
+                html2canvas:  { scale: 2, useCORS: true },
+                jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+            };
+
+            // Temporarily simplify styling for standard PDF generation
+            const originalBg = element.style.background;
+            element.style.background = 'white';
+            const originalShadow = element.style.boxShadow;
+            element.style.boxShadow = 'none';
+
+            html2pdf().set(opt).from(element).save().then(() => {
+                // Restore styling
+                element.style.background = originalBg;
+                element.style.boxShadow = originalShadow;
+            });
+        }
+
+        // --- Next Level: AI Voice Synthesis ---
+        document.addEventListener('DOMContentLoaded', () => {
+            const summaryText = "{{ evaluation_summary|replace('\n', ' ')|replace('\"', '\\\"') }}";
+            const levelText = "{{ prediction.level }}";
+            
+            if ('speechSynthesis' in window && summaryText.trim() !== "") {
+                setTimeout(() => {
+                    const engineGreeting = new SpeechSynthesisUtterance("Gait Analysis Complete. Cognitive Risk Level is: " + levelText + ". " + summaryText);
+                    engineGreeting.rate = 0.95;
+                    engineGreeting.pitch = 1.0;
+                    window.speechSynthesis.speak(engineGreeting);
+                }, 800);
+            }
+        });
+    </script>
+</body>
+
+</html>

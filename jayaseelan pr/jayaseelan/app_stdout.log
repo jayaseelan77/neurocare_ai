@@ -1,0 +1,3 @@
+Warning: serviceAccountKey.json not found. Firebase Admin SDK is disabled.
+ * Serving Flask app 'main'
+ * Debug mode: off

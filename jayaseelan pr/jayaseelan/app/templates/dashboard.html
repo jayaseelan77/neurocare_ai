@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analysis Dashboard - Dementia Detection</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="{{ url_for('static', filename='theme.js') }}"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675204552/pose.js"></script>
+    <style>
+        .blink { animation: blinker 1s linear infinite; }
+        @keyframes blinker { 50% { opacity: 0; } }
+        .btn-outline-premium { border-color: #764ba2; color: #764ba2; transition: all 0.3s; }
+        .btn-outline-premium:hover { background-color: #764ba2; color: white; }
+        /* Cyberpunk Scanner */
+        .scanner-hud { position: absolute; top:0; left:0; right:0; bottom:0; padding:10px; pointer-events: none; border: 2px solid rgba(118,75,162, 0.4); z-index:5; }
+        .scanner-laser { position: absolute; width:100%; height:4px; background: rgba(181, 141, 235, 0.8); box-shadow: 0 0 15px 5px rgba(181, 141, 235, 0.6); animation: scan 3s infinite linear; }
+        @keyframes scan { 0% { top: 0%; } 50% { top: 100%; } 100% { top: 0%; } }
+        /* Health Ring Animation */
+        @keyframes progress { 0% { stroke-dasharray: 0, 100; } }
+    </style>
+</head>
+
+<body>
+    <nav class="navbar navbar-dark navbar-premium px-4">
+        <div class="container">
+            <span class="navbar-brand fw-bold mb-0 h1"><i class="fas fa-microscope me-2"></i> GaitAnalysis Pro</span>
+            <div class="d-flex align-items-center">
+                <button class="btn btn-outline-light btn-sm rounded-circle me-3 px-2" onclick="toggleTheme()" title="Toggle Dark/Light Mode">
+                    <i id="themeIcon" class="fas fa-moon"></i>
+                </button>
+                <a href="{{ url_for('history') }}" class="btn btn-outline-light btn-sm rounded-pill px-3 me-3 text-white">History</a>
+                <span class="text-white me-4 d-none d-md-inline">User: {{ user.email }}</span>
+                <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm rounded-pill px-3">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="hero-section position-relative overflow-hidden">
+        <div class="container animate-fade position-relative" style="z-index: 2;">
+            <div class="row align-items-center">
+                <div class="col-md-9">
+                    <h1 class="display-5 fw-bold mb-3">Vision-Based Framework</h1>
+                    <p class="lead opacity-75">Computer Vision & CNN for Contactless Dementia Prediction</p>
+                </div>
+                <div class="col-md-3 d-none d-md-block text-end">
+                    <img src="{{ url_for('static', filename='img/gait_hero.png') }}" class="img-fluid rounded-circle shadow-lg animate-pulse" style="max-height: 140px; border: 4px solid rgba(255,255,255,0.3); object-fit: cover;" alt="Gait Analytics Neural Rendering">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container" style="margin-top: -30px;">
+        <div class="row g-4">
+            <div class="col-lg-7 animate-fade">
+                <div class="glass-card p-4 h-100">
+                    <h3 class="fw-bold mb-4"><i class="fas fa-video me-2 text-accent"></i> Start Gait Analysis</h3>
+                    <form action="{{ url_for('predict') }}" method="POST" enctype="multipart/form-data" id="uploadForm">
+                        <div class="row">
+                            <div class="col-md-6 mb-4">
+                                <label class="form-label fw-bold small text-uppercase">Task Configuration</label>
+                                <select name="task_type" id="taskTypeSelect" class="form-select border-0 shadow-sm p-3"
+                                    style="background: #f8f9fa;">
+                                    <option value="single">Single Task (Walking)</option>
+                                    <option value="dual">Dual Task (Walking + Cognitive)</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-4">
+                                <label class="form-label fw-bold small text-uppercase">Extraction Length</label>
+                                <input type="text" class="form-control border-0 shadow-sm p-3"
+                                    value="30 Frames (Standard)" disabled style="background: #f8f9fa;">
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="form-label fw-bold small text-uppercase">Upload Source Video</label>
+                            <div class="border-2 border-dashed rounded-4 p-5 text-center bg-light position-relative overflow-hidden" id="dropZone"
+                                style="border: 2px dashed #764ba2 !important; min-height: 250px;">
+                                
+                                <video id="previewVideo" autoplay loop muted playsinline class="position-absolute top-0 start-0 w-100 h-100 d-none" style="object-fit: cover;"></video>
+                                <div id="previewOverlay" class="position-absolute top-0 start-0 w-100 h-100 d-none align-items-center justify-content-center bg-dark bg-opacity-50 text-white" style="pointer-events: none; z-index: 2;">
+                                    <div class="text-center">
+                                        <i class="fas fa-check-circle fa-2x mb-2 text-success"></i>
+                                        <p class="mb-0 fw-bold">Video Ready</p>
+                                        <p class="mb-0 small opacity-75">Click anywhere to change</p>
+                                    </div>
+                                </div>
+
+                                <div id="dropZoneMessage" style="position: relative; z-index: 1;">
+                                    <i class="fas fa-cloud-upload-alt fa-3x text-accent mb-3" style="color: #764ba2;"></i>
+                                    <p class="mb-0 text-muted fw-bold">Drag and drop file here or click to select</p>
+                                </div>
+                                
+                                <input type="file" name="video" class="position-absolute top-0 start-0 w-100 h-100 opacity-0" accept="video/*" required
+                                    id="videoInput" style="cursor: pointer; z-index: 5;">
+                            </div>
+
+                            <div class="text-center mt-3" id="cameraToggleContainer">
+                                <p class="text-muted small fw-bold mb-2">&mdash; OR &mdash;</p>
+                                <button type="button" class="btn btn-outline-premium w-100 py-3 fw-bold" id="startCameraBtn">
+                                    <i class="fas fa-camera me-2"></i> Record Live Gait Test
+                                </button>
+                            </div>
+
+                            <div id="cameraContainer" class="d-none mt-3 p-3 bg-white rounded-4 border shadow-sm text-center position-relative">
+                                <div class="position-relative overflow-hidden rounded-3" style="max-height: 250px;">
+                                    <video id="liveVideo" autoplay playsinline muted class="w-100 bg-dark border" style="object-fit: cover; transform: scaleX(-1);"></video>
+                                    <div class="scanner-hud"><div class="scanner-laser"></div></div>
+                                </div>
+                                
+                                <!-- Cognitive Task Overlay -->
+                                <div id="cognitiveOverlay" class="position-absolute top-50 start-50 translate-middle w-75 p-3 rounded-4 bg-dark bg-opacity-75 d-none text-white shadow" style="z-index: 10;">
+                                    <h5 class="fw-bold text-warning mb-1"><i class="fas fa-brain me-2"></i>Cognitive Task</h5>
+                                    <h4 id="cognitivePromptText" class="fw-bold mb-0"></h4>
+                                </div>
+
+                                <!-- Walking Warning Overlay -->
+                                <div id="walkingWarningOverlay" class="position-absolute top-50 start-50 translate-middle w-75 p-3 rounded-4 bg-danger bg-opacity-75 border border-2 border-danger d-none text-white shadow" style="z-index: 15;">
+                                    <h5 class="fw-bold mb-1"><i class="fas fa-exclamation-triangle me-2 text-warning"></i>Visibility Warning</h5>
+                                    <h6 class="fw-bold mb-0">Full body walking not detected. Please step back into frame!</h6>
+                                </div>
+
+                                <div class="d-flex justify-content-between mt-3">
+                                    <button type="button" class="btn btn-danger w-100 me-2 fw-bold" id="recordBtn"><i class="fas fa-circle me-1"></i> Start Recording</button>
+                                    <button type="button" class="btn btn-secondary w-100 fw-bold" id="stopCameraBtn"><i class="fas fa-times me-1"></i> Cancel</button>
+                                </div>
+                                <p id="recordStatus" class="text-danger small mt-2 d-none fw-bold"><i class="fas fa-circle blink ms-1"></i> Recording... Walk away, then walk back.</p>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-premium w-100 py-3 h5" onclick="showLoader()">
+                            <span id="btnText"><i class="fas fa-bolt me-2"></i> Execute CNN Analysis</span>
+                        </button>
+
+                        <div id="loaderArea" class="text-center mt-3 d-none">
+                            <div class="analysis-loader"></div>
+                            <p class="text-accent fw-bold" style="color: #764ba2;">Processing Gait Landmarks...</p>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="col-lg-5 animate-slide">
+                <div class="glass-card p-4 h-100">
+                    <h4 class="fw-bold mb-4"><i class="fas fa-history me-2 text-accent"></i> Recent Activity</h4>
+                    <div class="timeline">
+                        {% if recent_history %}
+                            {% for item in recent_history %}
+                            <div class="stat-card p-3 mb-3 border rounded-4 d-flex justify-content-between align-items-center bg-white shadow-sm">
+                                <div>
+                                    <h6 class="mb-0 fw-bold">{{ item.task_type|capitalize }} Task Analysis</h6>
+                                    <small class="text-muted"><i class="far fa-clock me-1"></i>{{ item.timestamp[0:10] }} &bull; {{ item.timestamp[11:16] }}</small>
+                                </div>
+                                {% if item.risk_level == 'High Risk' %}
+                                    <span class="badge bg-danger-subtle text-danger rounded-pill px-3">{{ item.risk_level }}</span>
+                                {% elif item.risk_level == 'Moderate Risk' %}
+                                    <span class="badge bg-warning-subtle text-warning rounded-pill px-3">{{ item.risk_level }}</span>
+                                {% else %}
+                                    <span class="badge bg-success-subtle text-success rounded-pill px-3">{{ item.risk_level }}</span>
+                                {% endif %}
+                            </div>
+                            {% endfor %}
+                            <div class="text-center mt-3 mb-4">
+                                <a href="{{ url_for('history') }}" class="btn btn-sm btn-outline-premium rounded-pill px-4">View Full History Tracker</a>
+                            </div>
+                        {% else %}
+                            <div class="text-center p-4 mb-4 rounded-4" style="border: 2px dashed rgba(118, 75, 162, 0.4); background: rgba(255,255,255,0.05);">
+                                <i class="fas fa-notes-medical fa-2x mb-3" style="color: #764ba2;"></i>
+                                <p class="small fw-bold mb-1" style="color: #4a2b6b;">No past analyses found.</p>
+                                <p class="small mb-0 fw-medium text-secondary">Your latest assessments will appear here.</p>
+                            </div>
+                        {% endif %}
+                    </div>
+
+                    <div class="mt-4 p-4 rounded-4 bg-light">
+                        <h6 class="fw-bold mb-2">Academic Info</h6>
+                        <small class="text-muted d-block mb-2"><strong>Title:</strong> A Vision-Based Contactless
+                            Dementia Detection Framework Using CNN-Driven Single- and Dual-Task Gait Analysis.</small>
+                        <small class="text-muted"><strong>Methodology:</strong> MediaPipe skeleton extraction + Deep CNN
+                            Classification.</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showLoader() {
+            if (document.getElementById('videoInput').value || document.getElementById('videoInput').files.length > 0) {
+                document.getElementById('btnText').classList.add('d-none');
+                document.getElementById('loaderArea').classList.remove('d-none');
+            }
+        }
+
+        // --- Video Preview Logic ---
+        document.getElementById('videoInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const videoURL = URL.createObjectURL(file);
+                const previewVideo = document.getElementById('previewVideo');
+                previewVideo.src = videoURL;
+                previewVideo.classList.remove('d-none');
+                
+                document.getElementById('dropZoneMessage').classList.add('d-none');
+                const overlay = document.getElementById('previewOverlay');
+                overlay.classList.remove('d-none');
+                overlay.classList.add('d-flex');
+                
+                document.getElementById('dropZone').style.borderColor = "#198754";
+            }
+        });
+
+        // --- MediaPipe Real-Time Warning Logic ---
+        let pose;
+        
+        function initPose() {
+            if (pose || !window.Pose) return;
+            pose = new Pose({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675204552/${file}`
+            });
+            pose.setOptions({
+                modelComplexity: 0,
+                smoothLandmarks: true,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+            pose.onResults(onPoseResults);
+        }
+
+        function onPoseResults(results) {
+            if (!mediaRecorder || mediaRecorder.state !== "recording") return;
+            
+            const warningOverlay = document.getElementById('walkingWarningOverlay');
+            let isVisible = false;
+            if (results.poseLandmarks) {
+                const rAnkle = results.poseLandmarks[28];
+                const lAnkle = results.poseLandmarks[27];
+                const rKnee = results.poseLandmarks[26];
+                const lKnee = results.poseLandmarks[25];
+                
+                if ((rAnkle && rAnkle.visibility > 0.4) || 
+                    (lAnkle && lAnkle.visibility > 0.4) ||
+                    (rKnee && rKnee.visibility > 0.5) ||
+                    (lKnee && lKnee.visibility > 0.5)) {
+                    isVisible = true;
+                }
+            }
+
+            if (!isVisible) {
+                warningOverlay.classList.remove('d-none');
+            } else {
+                warningOverlay.classList.add('d-none');
+            }
+        }
+
+        let isAnalyzing = false;
+        async function analyzeVideoFrames() {
+            if (mediaRecorder && mediaRecorder.state === "recording" && pose) {
+                const videoEl = document.getElementById('liveVideo');
+                if (videoEl.readyState >= 2) {
+                    await pose.send({image: videoEl});
+                }
+                requestAnimationFrame(analyzeVideoFrames);
+            } else {
+                isAnalyzing = false;
+            }
+        }
+
+        // --- Live Camera Recording Logic ---
+        let mediaRecorder;
+        let recordedChunks = [];
+        let stream;
+        
+        document.getElementById('startCameraBtn').addEventListener('click', async () => {
+            document.getElementById('dropZone').classList.add('d-none');
+            document.getElementById('cameraToggleContainer').classList.add('d-none');
+            document.getElementById('cameraContainer').classList.remove('d-none');
+            
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+                document.getElementById('liveVideo').srcObject = stream;
+                initPose();
+            } catch (err) {
+                alert("Error accessing camera. Please ensure camera permissions are granted.");
+                document.getElementById('stopCameraBtn').click();
+            }
+        });
+
+        document.getElementById('stopCameraBtn').addEventListener('click', () => {
+            if(stream) stream.getTracks().forEach(track => track.stop());
+            document.getElementById('cameraContainer').classList.add('d-none');
+            document.getElementById('dropZone').classList.remove('d-none');
+            document.getElementById('cameraToggleContainer').classList.remove('d-none');
+            
+            if (mediaRecorder && mediaRecorder.state === "recording") {
+                mediaRecorder.stop();
+            }
+            document.getElementById('cognitiveOverlay').classList.add('d-none');
+            document.getElementById('walkingWarningOverlay').classList.add('d-none');
+            if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+        });
+
+        document.getElementById('recordBtn').addEventListener('click', () => {
+            if (mediaRecorder && mediaRecorder.state === "recording") {
+                mediaRecorder.stop();
+                return;
+            }
+
+            recordedChunks = [];
+            let options = { mimeType: 'video/webm' };
+            if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+                options = { mimeType: 'video/webm; codecs=vp9' };
+            } else if (MediaRecorder.isTypeSupported('video/mp4')) {
+                options = { mimeType: 'video/mp4' };
+            }
+            
+            mediaRecorder = new MediaRecorder(stream, options);
+            
+            mediaRecorder.ondataavailable = function(e) {
+                if (e.data.size > 0) {
+                    recordedChunks.push(e.data);
+                }
+            };
+
+            mediaRecorder.onstop = function() {
+                document.getElementById('cognitiveOverlay').classList.add('d-none');
+                document.getElementById('walkingWarningOverlay').classList.add('d-none');
+                if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+
+                const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || 'video/webm' });
+                const file = new File([blob], "live_gait_recording.mp4", { type: mediaRecorder.mimeType || 'video/webm' });
+                
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(file);
+                document.getElementById('videoInput').files = dataTransfer.files;
+                
+                // Stop UI feeds
+                document.getElementById('stopCameraBtn').click();
+                
+                // Show physical video preview
+                const videoURL = URL.createObjectURL(file);
+                const previewVideo = document.getElementById('previewVideo');
+                previewVideo.src = videoURL;
+                previewVideo.classList.remove('d-none');
+                
+                document.getElementById('dropZoneMessage').classList.add('d-none');
+                const overlay = document.getElementById('previewOverlay');
+                overlay.classList.remove('d-none');
+                overlay.classList.add('d-flex');
+                
+                const zone = document.getElementById('dropZone');
+                zone.style.borderColor = "#198754";
+            };
+
+            mediaRecorder.start(200); 
+            document.getElementById('recordBtn').innerHTML = '<i class="fas fa-stop me-1"></i> Stop Recording';
+            document.getElementById('recordBtn').className = 'btn btn-dark w-100 me-2 fw-bold';
+            document.getElementById('recordStatus').classList.remove('d-none');
+            
+            if (pose && !isAnalyzing) {
+                isAnalyzing = true;
+                requestAnimationFrame(analyzeVideoFrames);
+            }
+            
+            // --- Phase 3 Cognitive Task Logic ---
+            let taskType = document.getElementById('taskTypeSelect').value;
+            if (taskType === 'dual') {
+                const starts = [100, 90, 80, 70];
+                const gaps = [7, 3, 4];
+                const st = starts[Math.floor(Math.random() * starts.length)];
+                const gp = gaps[Math.floor(Math.random() * gaps.length)];
+                
+                const promptMsg = `Count backwards from ${st} by ${gp}s out loud`;
+                document.getElementById('cognitivePromptText').innerText = promptMsg;
+                document.getElementById('cognitiveOverlay').classList.remove('d-none');
+                
+                if ('speechSynthesis' in window) {
+                    const utterance = new SpeechSynthesisUtterance("Please " + promptMsg + " while walking.");
+                    utterance.rate = 0.9;
+                    utterance.pitch = 1.0;
+                    window.speechSynthesis.speak(utterance);
+                }
+            }
+            
+            // Auto stop adjusting for task duration
+            const duration = taskType === 'dual' ? 10000 : 7000;
+            setTimeout(() => {
+                if (mediaRecorder && mediaRecorder.state === "recording") {
+                    mediaRecorder.stop();
+                }
+            }, duration);
+        });
+    </script>
+</body>
+
+</html>
